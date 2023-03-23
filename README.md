@@ -13,3 +13,6 @@ Credits: <a href="https://github.com/Ko0z/Xloot">Ko0z</a>, <a href="https://gith
 # Install 
 
 For TBC rename the folder "XLoot-pfUI"
+
+# Source
+https://github.com/mrrosh/XLoot-pfUI
