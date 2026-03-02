@@ -1,32 +1,29 @@
--- Thanks to #wowace for help, Arantxa for ideas and support, the PocketHelper/Squeenix/FruityLoots/oSkin addons for various code snippets and trial and error. 
 -- May your brain not spontaneously explode from the reading of this disorganized mod.
--- Positioning code re-write first implimented and then inspired by Dead_LAN! Thanks
--- localization (and koKR locals) by fenlis. Thanks =)
--- Dreaded Esc bug (hopefully) fixed by ckknight! Thanks so much ^_~
--- Todo: Add "Link all to party/raid" button. Split loot frame display into modules, add Slim layout, add Block layout. Add indicator icons to the items. Dice for items that will be rolled on. Lock or something else for BoP items.
-local L = AceLibrary("AceLocale-2.0"):new("XLoot-pfUI")
+local L = AceLibrary("AceLocale-2.2"):new("XLoot")
 
-XLoot = AceLibrary("AceAddon-2.0"):new("AceEvent-2.0", "AceDB-2.0", "AceConsole-2.0", "AceHook-2.0", "AceModuleCore-2.0");-- Shhhhh
+XLoot = AceLibrary("AceAddon-2.0"):new("AceEvent-2.0", "AceDB-2.0", "AceConsole-2.0", "AceHook-2.1", "AceModuleCore-2.0")-- Shhhhh
 
-XLoot.revision  = tonumber((string.gsub("$Revision: 12996 $", "^%$Revision: (%d+) %$$", "%1")))
---libs\AceModuleCore\AceModuleCore-2.0.lua
-XLoot:SetModuleMixins("AceEvent-2.0", "AceDB-2.0", "AceHook-2.0")
+XLoot.revision  = tonumber((string.gsub("$Revision: 366 $", "^%$Revision: (%d+) %$$", "%1")))
+
+XLoot:SetModuleMixins("AceEvent-2.0", "AceConsole-2.0", "AceHook-2.1")
 XLoot.dewdrop = AceLibrary("Dewdrop-2.0")
 
-local _G = getfenv(0) -- Lovely shortcut, if it works.
-
-XLoot.compat = string.find(GetBuildInfo(), "^2%.")
+local _G = getfenv(0)
 
 function XLoot:OnInitialize()
-	self:RegisterDB("XLootpfUIDB")
+	self:RegisterDB("XLootDB")
 	self.dbDefaults = {
 		scale = 1.0,
+		alpha = 1.0,
 		cursor = true,
 		debug = false,
 		smartsnap = true,
 		snapoffset = 0,
 		altoptions = true,
 		collapse = true,
+		linkallvis = "always",
+		linkallthreshold = 2,
+		linkallchannels = { },
 		dragborder = true,
 		lootexpand = true,
 		swiftloot = false,
@@ -34,31 +31,39 @@ function XLoot:OnInitialize()
 		qualityframe = false,
 		texcolor = true,
 		lootqualityborder = true,
+		loothighlightframe = true,
+		loothighlightthreshold = 1,
 		qualitytext = false,
 		infotext = true,
-		oskin = false,
+		bindtext = true,
 		lock = false,
+		skipsolobop = true,
 		pos = { x = (UIParent:GetWidth()/2), y = (UIParent:GetHeight()/2) },
 		bgcolor = { 0, 0, 0, .7 },
 		bordercolor = { .7, .7, .7, 1 },
 		lootbgcolor = { 0, 0, 0, .9 },
-		lootbordercolor = { .5, .5, .5, 1 }
-	};
+		lootbordercolor = { .5, .5, .5, 1 },
+		infocolor = { 1, .8, 0 },
+		noscan = false
+	}
 	self:RegisterDefaults("profile", self.dbDefaults)
-	self:DoOptions()			
+	self:DoOptions()
+	
 	--Initial session variables
 	self.numButtons = 0 -- Buttons currently created
 	self.buttons = {} -- Easy reference array by ID
 	self.frames = {}
+	self.currentloot = {}
 	self.visible = false
-	self.closing = false
-	self.setexpandedtext = false
+	self.open = false
 	self.loothasbeenexpanded = false
+	self.containershift = false
 	self.swiftlooting = false
 	self.swifthooked = false
+	self.classhexes = { }
+	self.coinage = { { GOLD, 10000 }, { SILVER, 100 }, { COPPER, 1 } }
 	self:SetupFrames()
-	
-	--Setup menu
+
 	self.dewdrop:Register(XLootFrame,
 		'children', function()
 				self.dewdrop:FeedAceOptionsTable(self.opts)
@@ -66,39 +71,48 @@ function XLoot:OnInitialize()
 		'cursorX', true,
 		'cursorY', true
 	)
-	self.dewdrop:Register(UIParent,
+
+end
+
+function XLoot:OpenMenu(frame)
+	self.dewdrop:Open(frame,
 		'children', function(level, value)
 				self.dewdrop:FeedAceOptionsTable(self.opts)
 			end,
 		'cursorX', true,
-		'cursorY', true,
-		'dontHook', true
+		'cursorY', true
 	)
 end
 
 --Hook builtin functions
 function XLoot:OnEnable()
-	self:Hook("CloseWindows")
-	self:Hook("LootFrame_OnEvent")
-	self:Hook("LootFrame_OnShow")
-	self:Hook("LootFrame_OnHide")
-	self:Hook("LootFrame_Update")
-	if self.compat then
-		self:Hook("LootButton_OnClick", "OnButtonClick")
-		self:Hook("LootButton_OnModifiedClick", "OnModifiedButtonClick")
-	else
-		self:Hook("LootFrameItem_OnClick", "OnClick")
-	end
-	if self.db.profile.swiftloot then
+	local db = self.db.profile
+	self:Hook("CloseSpecialWindows", true)
+	self:Hook("LootButton_OnClick", "OnModifiedButtonClick", true)
+	LootFrame:SetScript("OnUpdate", self.LootFrame_Update)
+	LootFrame:UnregisterEvent("LOOT_OPENED")
+	LootFrame:UnregisterEvent("LOOT_SLOT_CLEARED")
+	LootFrame:UnregisterEvent("LOOT_CLOSED")
+	if db.swiftloot then
 		self:SwiftMouseEvents(true)
 	end
 	self:RegisterEvent("LOOT_OPENED", "OnOpen")
 	self:RegisterEvent("LOOT_SLOT_CLEARED", "OnClear")
 	self:RegisterEvent("LOOT_CLOSED", "OnClose")
+	
+--	self:RegisterEvent("SpecialEvents_CoinLooted", "Print")
+--	self:RegisterEvent("SpecialEvents_ItemLooted", "Print")
+--	self:RegisterEvent("SpecialEvents_RollSelected", "Print")
+--	self:RegisterEvent("SpecialEvents_RollMade", "Print")
+--	self:RegisterEvent("SpecialEvents_RollWon", "Print")
+--	self:RegisterEvent("SpecialEvents_RollAllPassed", "Print")
 end
 
 function XLoot:OnDisable()
 	self:UnregisterAllEvents()
+	LootFrame:RegisterEvent("LOOT_OPENED") 
+	LootFrame:RegisterEvent("LOOT_SLOT_CLEARED")
+	LootFrame:RegisterEvent("LOOT_CLOSED") 
 end
 
 function XLoot:Defaults()
@@ -108,30 +122,80 @@ function XLoot:Defaults()
 	end
 end
 
---local ItemInfo -- Is this code familiar? Hmm.... shhh
-do
-	if XLoot.compat then
-		-- 2.0.0
-		function XLoot:ItemInfo(num) -- itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, invTexture
-			local itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, invTexture = GetItemInfo(num)
-			return itemName, itemLink, itemRarity, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, invTexture, itemLevel
-		end
-	else
-		function XLoot:ItemInfo(num) -- itemName, itemString, itemQuality, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc, itemTexture
-			return GetItemInfo(num)
+local function SafeRegister(event, ...)
+	if not XLoot:IsEventRegistered(event) then
+		XLoot:RegisterEvent(event, ...)
+	end
+end
+
+local function SafeUnregister(event)
+	if XLoot:IsEventRegistered(event) then
+		XLoot:UnregisterEvent(event)
+	end
+end
+
+local function IsSwift()
+	return GetCVarBool("autoLootDefault") ~= IsModifiedClick("AUTOLOOTTOGGLE")
+end
+
+---------- Shift-Looting detection. Fear the monster 'if' hives -----------
+---- Herbs/Containers ----
+local containershift = false
+function XLoot:UNIT_SPELLCAST_SUCCEEDED(unit, spell)
+	if unit == 'player' and (spell == L["evHerbs"] or spell == L["evOpenNT"] or spell == L["evOpen"]) and containershift then
+		self.swiftlooting = true
+		SafeRegister("UI_ERROR_MESSAGE", "SwiftErrmsg")
+		self:ScheduleEvent(function() self.swiftlooting = false SafeUnregister('UI_ERROR_MESSAGE') end, 1)
+	end
+end
+
+function XLoot:UNIT_SPELLCAST_START(unit, spell)
+	if unit == 'player' and IsSwift() then containershift = true end
+end
+
+function XLoot:UNIT_SPELLCAST_STOP(unit, spell)
+	if unit == 'player' then
+		if containershift then 
+			self:ScheduleEvent(function() containershift = false end, 1)
 		end
 	end
 end
 
----------- Shift-Looting detection. Fear the monster 'if' hives -----------
+function XLoot:SwiftMouseDeuce(state) 
+	if state and not self:IsHooked(WorldFrame, "OnMouseUp") then
+		self:HookScript(WorldFrame, "OnMouseUp", "SwiftMouseUpDeuce")
+	elseif self:IsHooked(WorldFrame, "OnMouseUp") then
+		self:Unhook(WorldFrame, "OnMouseUp")
+	end
+	self:SwiftMouseEvents(state)
+end
+
+function XLoot:SwiftMouseUpDeuce(button)
+	if UnitIsDead("target")  then
+		if UnitIsUnit("mouseover", "target") then
+			if not UnitIsPlayer("target") then
+				if CheckInteractDistance("target", 1) then
+					self:SwiftMouseUp()
+				end
+			end
+		end
+	end
+end
 
 function XLoot:SwiftMouseEvents(state) 
 	if state and not self:IsEventRegistered("UPDATE_MOUSEOVER_UNIT") then
+		self:msg("Hooking autoloot events")
 		self:RegisterEvent("PLAYER_TARGET_CHANGED", "SwiftTargetChange")
 		self:RegisterEvent("UPDATE_MOUSEOVER_UNIT", "SwiftMouseover")
+		self:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+		self:RegisterEvent("UNIT_SPELLCAST_START")
+		self:RegisterEvent("UNIT_SPELLCAST_STOP")
 	elseif not state and self:IsEventRegistered("UPDATE_MOUSEOVER_UNIT") then
 		self:UnregisterEvent("PLAYER_TARGET_CHANGED")
 		self:UnregisterEvent("UPDATE_MOUSEOVER_UNIT")
+		self:UnregisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+		self:UnregisterEvent("UNIT_SPELLCAST_START")
+		self:UnregisterEvent("UNIT_SPELLCAST_STOP")
 	end
 end
 
@@ -160,14 +224,12 @@ function XLoot:SwiftMouseover()
 end
 
 function XLoot:SwiftHooks(state)
-	if state then
-		--self:Print("Hooking for swiftloot...")
-		self:RegisterEvent("UI_ERROR_MESSAGE", "SwiftErrmsg")
+	if state and not self:IsHooked(WorldFrame, "OnMouseUp") then
+		SafeRegister("UI_ERROR_MESSAGE", "SwiftErrmsg")
 		self:HookScript(WorldFrame, "OnMouseUp", "SwiftMouseUp")
 		self.swifthooked = true
 	else
-		--self:Print("Releasing swiftloot hooks...")
-		self:UnregisterEvent("UI_ERROR_MESSAGE")
+		SafeUnregister("UI_ERROR_MESSAGE")
 		if self:IsHooked(WorldFrame, "OnMouseUp") then
 			self:Unhook(WorldFrame, "OnMouseUp")
 		end
@@ -194,11 +256,9 @@ function XLoot:SwiftTargetChange(lastevent)
 end
 
 function XLoot:SwiftMouseUp()
-	if IsShiftKeyDown() then
-		--self:Print("Swiftlooting...")
+	if IsSwift() then
 		if not self.swifthooked then
-			self:RegisterEvent("UI_ERROR_MESSAGE", "SwiftErrmsg")
-			self.swifthooked = true
+			SafeRegister("UI_ERROR_MESSAGE", "SwiftErrmsg")
 		end
 		self.swiftlooting = true
 	else
@@ -206,31 +266,45 @@ function XLoot:SwiftMouseUp()
 	end
 end
 
-
-function  XLoot:CloseWindows(ignoreCenter) 
-	local hookedresult = self.hooks["CloseWindows"].orig(ignoreCenter)
+---- Operational functions/hooks ----
+function XLoot:CloseSpecialWindows(ignoreCenter) 
 	if self.frame:IsShown() then 
-		self:AutoClose(true)
+		self:AutoClose(true, true)
 		return true
 	end
-	return 	hookedresult
+	local hookedresult = self.hooks.CloseSpecialWindows(ignoreCenter)
+	return hookedresult
 end
 
 function XLoot:OnOpen()
---	if not self:AutoClose() then
---		self:OnClear()
---	end
+	self:msg("OnOpen()")
+	if self:AutoClose() == nil then
+		if not self.visible and IsFishingLoot() then
+			PlaySound("FISHING REEL IN")
+		end
+		self:Clear()
+		self:Update()
+	end
 end
 
 function XLoot:OnClear()
 	self.refreshing = true
-	self:Clear();
-	self:Update();
+	self:Clear()
+	self:Update()
 end
 
 function XLoot:OnClose()
-	self:Clear();
+	self:AutoClose()
+	StaticPopup_Hide("LOOT_BIND")
+	self:Clear()
+	self.swiftlooting = false
 end
+
+--function XLoot:OnUpdate()
+--	if not self:AutoClose() then
+--		self:Update()
+--	end
+--end
 
 function XLoot:OnHide()
 	if not self.refreshing then
@@ -242,94 +316,68 @@ end
 
 function XLoot:ClickCheck(button)
 	if IsAltKeyDown() and button == "RightButton" and self.db.profile.altoptions and not IsShiftKeyDown() and not IsControlKeyDown() then
-		self.dewdrop:Open(XLootFrame)
+		self:OpenMenu(XLootFrame)
 		return 1
 	end
 end
 
 function XLoot:OnClick(button)
 	if not self:ClickCheck(button) then
-		self.hooks["LootFrameItem_OnClick"].orig(button)
+		self.hooks.LootFrameItem_OnClick(button)
 	end
 end
 
 function XLoot:OnButtonClick(button)
 	if not self:ClickCheck(button) then
-		self.hooks["LootButton_OnClick"].orig(button)
+		self.hooks.LootButton_OnClick(button)
 	end
 end
 
 function XLoot:OnModifiedButtonClick(button)
 	if not self:ClickCheck(button) then
-		self.hooks["LootButton_OnModifiedClick"].orig(button)
-	end
-end
-
-function XLoot:LootFrame_OnEvent(event)
-	if event ~= "LOOT_SLOT_CLEARED" then
-		self.hooks["LootFrame_OnEvent"].orig(event)
-	end
-	if event == "LOOT_OPENED" then
-		HideUIPanel(LootFrame);
-	end
-end
-
--- Show our frame and hide the old one
-function XLoot:LootFrame_OnShow()
-	--self.hooks["LootFrame_OnShow"].orig()
-	if self:AutoClose() == nil then
-		if not self.visible and IsFishingLoot() then
-			PlaySound("FISHING REEL IN")
-		end
-		self:Clear()
-		self:Update()
-	end
-end
-
--- Block closing loot
-function XLoot:LootFrame_OnHide()
-end
-
--- Update our lootframe
-function XLoot:LootFrame_Update()
-	--XLoot.hooks["LootFrame_Update"].orig()
-	if self:AutoClose() then
-		self:Update()
+		self.hooks.LootButton_OnClick(button)
 	end
 end
 
 function XLoot:AutoClose(force) -- Thanks, FruityLoots.
 	if (GetNumLootItems() == 0) or force then 
 		self:Clear()
+		--self:msg("AutoClosing ("..GetNumLootItems() ..")"..(force and " Forced!" or ""))
+		self.swiftlooting = false
+		self:msg("Manually closing the loot frame.")
 		HideUIPanel(LootFrame)
-		CloseLoot()
-		self:msg("AutoClosing ("..GetNumLootItems() ..")"..(force and " Forced!" or ""))
+		if not InCombatLockdown() then
+			CloseLoot()   -- now protected
+		end
 		return 1
 	end
 	self:msg("AutoClose check passed")
 	return nil
 end
 
--- Core
+---- Core ----
 function XLoot:Update()
+	self:msg("Updating")
+	--self.open = true
 	if self.swiftlooting then 
-		self:msg("Overrode update, swiftlooting")
+		self:msg("Overriding update, swiftlooting")
 		return
 	end
 	local db = self.db.profile
+	self.currentloot = self.nilTable(self.currentloot)
 	local numLoot = GetNumLootItems()
 	--Build frames if we need more
 	if (numLoot > self.numButtons) then
 		for i = (self.numButtons + 1), numLoot do
-			self:msg("Adding needed frame["..(i).."], numButtons = "..XLoot.numButtons.." & numLoot = "..numLoot)
+			--self:msg("Adding needed frame["..(i).."], numButtons = "..XLoot.numButtons.." & numLoot = "..numLoot)
 			self:AddLootFrame(i)
 		end
 	end
 	-- LootLoop
-	local curslot, button, frame, texture, item, quantity, quality, color, qualitytext, textobj, infoobj, qualityobj
+	local slot, curslot, button, frame, texture, item, quantity, quality, color, qualitytext, textobj, infoobj, qualityobj
 	local curshift, qualityTower, framewidth  = 0, 0, 0
 	for slot = 1, numLoot do
-		texture, item, quantity, quality = GetLootSlotInfo(slot)
+		texture, item, quantity, quality, locked = GetLootSlotInfo(slot) -- 3.3 patch added 'locked' paramater
 		if (texture) then
 			curshift = curshift +1
 			-- If we're shifting loot, use position slots instead of item slots
@@ -342,13 +390,9 @@ function XLoot:Update()
 				frame = self.frames[slot]
 				curslot = slot
 			end
-			-- Update slot ID's for WoW's sanity
-			if not self.compat then
-				button:SetSlot(slot)
-			end
 			button:SetID(slot)
 			button.slot = slot
-			self:msg("Attaching loot["..slot.."] ["..item.."] to slot ["..curslot.."], bSlot = "..button.slot);
+			--self:msg("Attaching loot["..slot.."] ["..item.."] to slot ["..curslot.."], bSlot = "..button.slot);
 			color = ITEM_QUALITY_COLORS[quality]
 			qualityTower = max(qualityTower, quality)
 			SetItemButtonTexture(button, texture)
@@ -356,10 +400,14 @@ function XLoot:Update()
 			infoobj = _G["XLootButton"..curslot.."Description"]
 			qualityobj = _G["XLootButton"..curslot.."Quality"]
 			infoobj:SetText("")
+			infoobj:SetVertexColor(unpack(db.infocolor))
 			qualityobj:SetText("")
 			if LootSlotIsCoin(slot) then -- Fix and performance fix thanks to Dead_LAN
 				item = string.gsub(item, "\n", " ", 1, true);
 			end
+			
+			table.insert(self.currentloot, { texture = texture, item = item, quantity = quantity, quality = quality, link = GetLootSlotLink(slot) })
+			
 			if db.lootexpand then
 				textobj:SetWidth(700)
 				infoobj:SetWidth(700)
@@ -372,13 +420,14 @@ function XLoot:Update()
 			
 			if db.qualitytext and not LootSlotIsCoin(slot) then 
 				qualityobj:SetText(_G["ITEM_QUALITY"..quality.."_DESC"])
-				qualityobj:SetVertexColor(.8, .8, .8, 1); --1
+				qualityobj:SetVertexColor(.8, .8, .8, 1);
 				textobj:SetPoint("TOPLEFT", button, "TOPLEFT", 42, -12)
 				infoobj:SetPoint("TOPLEFT", button, "TOPLEFT", 45, -22)
 				textobj:SetHeight(10)
 			elseif LootSlotIsCoin(slot) then
 				textobj:SetPoint("TOPLEFT", button, "TOPLEFT", 42, 2)
 				qualityobj:SetText("")
+				button.bind:SetText("")
 				textobj:SetHeight(XLootButton1:GetHeight()+1)
 			else
 				qualityobj:SetText("")
@@ -391,22 +440,34 @@ function XLoot:Update()
 				infoobj:SetPoint("TOPLEFT", button, "TOPLEFT", 45, -18)
 				textobj:SetHeight(10)
 			end
+			
 			if db.lootqualityborder then
 				frame:SetBackdropBorderColor(color.r, color.g, color.b, 1)
-				button:SetBackdropBorderColor(color.r, color.g, color.b, 1) -- Color on Loot Icon Border by Quality
+				button.wrapper:SetBackdropBorderColor(color.r, color.g, color.b, 1)
 			else
 				frame:SetBackdropBorderColor(unpack(db.lootbordercolor))
+				button.wrapper:SetBackdropBorderColor(unpack(db.lootbordercolor))
 			end
-			if db.texcolor and LootSlotIsItem(slot) and quality > 1 then
+			
+			if LootSlotIsItem(slot) and quality >= db.loothighlightthreshold then
 				local r, g, b, hex = GetItemQualityColor(quality)
-				button.border:SetVertexColor(r, g, b)
-				button.border:Show() 
+				if db.texcolor then
+					button.border:SetVertexColor(r, g, b)
+					button.border:Show()
+				else button.border:Hide() end
+				if db.loothighlightframe then
+					frame.border:SetVertexColor(r, g, b)
+					frame.border:Show()
+				else frame.border:Hide() end
 			else
 				button.border:Hide()
+				frame.border:Hide()
 			end
+			
 			if LootSlotIsItem(slot) and db.infotext then
 				self:SetSlotInfo(slot, button)
 			end
+			
 			if db.lootexpand then 
 				framewidth = max(framewidth, textobj:GetStringWidth(), infoobj:GetStringWidth())
 			end
@@ -415,22 +476,23 @@ function XLoot:Update()
 			button.quality = quality
 			button:Show()
 			frame:Show()
+			
 		elseif not db.collapse then
 			curshift = curshift + 1
 			self.buttons[slot]:Hide()
-			self:msg("Hiding slot "..slot..", curshift: "..curshift)
+			--self:msg("Hiding slot "..slot..", curshift: "..curshift)
 		end
 	end
 	
-	if slot == curshift then --Collapse lower buttons
-		curshift = curshift -1
-		self:msg("Collapsing end slot "..slot..", curshift now "..curshift)
-	end
+	--if slot == curshift then --Collapse lower buttons
+	--	curshift = curshift -1
+	--	--self:msg("Collapsing end slot "..slot..", curshift now "..curshift)
+	--end
 	
 	XLootFrame:SetScale(db.scale)
 	local color = ITEM_QUALITY_COLORS[qualityTower]
 	if db.qualityborder and not self.visible then 
-		self:msg("Quality tower: "..qualityTower)
+		--self:msg("Quality tower: "..qualityTower)
 		self.frame:SetBackdropBorderColor(color.r, color.g, color.b, 1)
 	else
 		 self.frame:SetBackdropBorderColor(unpack(db.bordercolor))
@@ -441,15 +503,15 @@ function XLoot:Update()
 		self.frame:SetBackdropColor(unpack(db.bgcolor))
 	end
 		
-	XLootFrame:SetHeight( 1 + (curshift*XLootButtonFrame1:GetHeight() )) 
+	XLootFrame:SetHeight(20 + (curshift*(XLootButtonFrame1:GetHeight()+2)))
 	
 	if db.lootexpand then
 		self.loothasbeenexpanded = true
 		local fwidth, bwidth = (self.buttons[1]:GetWidth() + framewidth + 21), -(framewidth + 16)
-		self:UpdateWidths(curshift, fwidth, bwidth, fwidth + 1) 
-	elseif self.loothasbeenexpanded then
+		self:UpdateWidths(curshift, fwidth, bwidth, fwidth+24)
+	else --if self.loothasbeenexpanded then
 		self.loothasbeenexpanded = false
-		self:UpdateWidths(curshift, 200, -163, 222)
+		self:UpdateWidths(table.getn(self.frames), 200, -163, 222)
 	end
 	
 	
@@ -458,49 +520,58 @@ function XLoot:Update()
 	end
 	
 	self.frame:Show()
-	self.closebutton:Show()
-	self:msg("Displaying at position: "..XLootFrame:GetLeft().." "..XLootFrame:GetTop());
+	if db.linkallvis == "always" or (db.linkallvis == "raid" and GetNumRaidMembers() > 0) or (db.linkallvis == "party" and GetNumPartyMembers() > 0) then
+		self.linkbutton:Show()
+	else
+		self.linkbutton:Hide()
+	end
+	--self:msg("Displaying at position: "..XLootFrame:GetLeft().." "..XLootFrame:GetTop());
 	self.visible = true
 	
 	--Hopefully avoid non-looting/empty bar
 	if self:AutoClose() then
-		self:msg("Possible hanger frame. Closing.. "..numLoot..", "..curshift)
+		--self:msg("Possible hanger frame. Closing.. "..numLoot..", "..curshift)
 	end
 end
 
-function XLoot:Layout_Default_Update(items)
-end
-
  function XLoot:UpdateWidths(framenum, fwidth, bwidth, ofwidth)
-		for i = 1, framenum do
-			self.frames[i]:SetWidth(fwidth)
-			self.buttons[i]:SetHitRectInsets(0, bwidth, 0, -1)
-		end
-		self.frame:SetWidth(ofwidth)
+ 	local expand = self.db.profile.lootexpand
+	for i = 1, framenum do
+		self.frames[i]:SetWidth(fwidth)
+		self.buttons[i]:SetHitRectInsets(0, bwidth, 0, -1)
+		self:QualityBorderResize(self.frames[i])
+	end
+	self.frame:SetWidth(ofwidth)
 end 
 
 function XLoot:SetSlotInfo(slot, button) -- Yay wowwiki demo
 	local link =  GetLootSlotLink(slot)
-	--local justName = string.gsub(link,"^.-%[(.*)%].*", "%1")
-	local itemName, itemLink, itemRarity, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc = self:ItemInfo(self:LinkToID(link))
+	if not link then return nil end -- Avoid errors for now.
+	local itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount, itemEquipLoc = GetItemInfo(link)
+	local oldLoc = itemEquipLoc
+	self:SetBindText(self:GetBindOn(itemLink), button.bind)
 	if itemType == "Weapon" then
 		itemEquipLoc = "Weapon"
 	else
-		--local ielfunc = assert(loadstring("return "..itemEquipLoc));
-		itemEquipLoc = _G[itemEquipLoc]--ielfunc();
+		itemEquipLoc = _G[itemEquipLoc]
 	end
 	if itemSubType == "Junk" then 
-		itemSubType = (itemRarity > 0) and "Quest Item" or itemSubType
+		itemSubType = (itemRarity > 0) and L["qualityQuest"] or itemSubType
 	end
-	_G[button:GetName().."Description"]:SetText((itemEquipLoc and itemEquipLoc..", " or "") .. ((itemSubType == itemSubType) and itemSubType or itemSubType.." "..itemType))
---((itemMinLevel > 0) and "Lv"..itemMinLevel.." " or "") .. 
+	if itemSubType == "Money(OBSOLETE)" then
+		itemSubType = "Currency"
+	end
+--	if type(itemEquipLoc) == "table" then
+--		itemEquipLoc = ("BUG itemType, oldLoc = %s, %s"):format(itemType, oldLoc)
+--	end
+	button.desc:SetText(((type(itemEquipLoc) == "string" and itemEquipLoc ~= "") and itemEquipLoc..", " or "") .. ((itemSubType == itemSubType) and itemSubType or itemSubType.." "..itemType))
 end
 
 function XLoot:PositionAtCursor() --Fruityloots mixup, only called if cursor snapping is enabled
 	x, y = GetCursorPosition()
 	local s = XLootFrame:GetEffectiveScale()
-	x = (x / s) - 20 
-	y = (y / s) + 20 
+	x = (x / s) - 30
+	y = (y / s) + 30
 	local screenWidth = GetScreenWidth()
 	if (UIParent:GetWidth() > screenWidth) then screenWidth = UIParent:GetWidth() end
 	local screenHeight = GetScreenHeight()
@@ -512,70 +583,99 @@ function XLoot:PositionAtCursor() --Fruityloots mixup, only called if cursor sna
 	if (y - windowHeight) < 0 then y = windowHeight end
 	LootFrame:ClearAllPoints()
 	if (self.db.profile.smartsnap and self.visible) then
-		x = XLootFrame:GetLeft();
+		x = XLootFrame:GetLeft()
 	else 
 		x = x + self.db.profile.snapoffset
 	end
-	XLootFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y);
+	XLootFrame:ClearAllPoints()
+	XLootFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
 end
 
 -- Add a single lootframe
 function XLoot:AddLootFrame(id)
 	local frame = CreateFrame("Frame", "XLootButtonFrame"..id, self.frame)
-	local button = CreateFrame(LootButton1:GetObjectType(), "XLootButton"..id, frame, "LootButtonTemplate")
+	local bname = "XLootButton"..id
+	local button = CreateFrame(LootButton1:GetObjectType(), bname, frame, "LootButtonTemplate")
 	-- Equivalent of XLootButtonTemplate
-	local buttontext = _G["XLootButton"..id.."Text"]
-	local buttondesc = button:CreateFontString("XLootButton"..id.."Description", "ARTWORK", "GameFontNormalSmall")
-	local buttonquality = button:CreateFontString("XLootButton"..id.."Quality", "GameFontNormalSmall")
-	local font = {buttontext:GetFont()}
-	font[2] = 10
-	buttontext:SetDrawLayer("OVERLAY")
-	buttondesc:SetDrawLayer("OVERLAY")
-	buttonquality:SetDrawLayer("OVERLAY")
-	buttondesc:SetFont(unpack(font))
-	buttonquality:SetFont(unpack(font))
-	buttondesc:SetJustifyH("LEFT")
-	buttonquality:SetJustifyH("LEFT")
-	buttondesc:SetHeight(10)	
-	buttonquality:SetWidth(155)
-	buttonquality:SetHeight(10)
-	buttontext:SetHeight(10)
-	button:IsToplevel(1)
-	buttonquality:SetPoint("TOPLEFT", button, "TOPLEFT", 45, -3)
-	button:SetBackdrop({bgFile = "Interface\\AddOns\\XLoot-pfUI\\media\\bg", tile = true, tileSize = 8,
-								edgeFile = "Interface\\AddOns\\XLoot-pfUI\\media\\border_col", edgeSize = 8,
-								 insets = {left = 0, right = 0, top = 0, bottom = 0 }})
+	local text = _G[bname.."Text"]
+	local desc = button:CreateFontString(bname.."Description")
+	local quality = button:CreateFontString(bname.."Quality")
+	local bind = button:CreateFontString(bname.."Bind")
+	
+	local font = { STANDARD_TEXT_FONT, 10, "" }
+	
+	text:SetDrawLayer("OVERLAY")
+	desc:SetDrawLayer("OVERLAY")
+	quality:SetDrawLayer("OVERLAY")
+	bind:SetDrawLayer("OVERLAY")
+	
+	desc:SetFont(unpack(font))
+	quality:SetFont(unpack(font))
+	font[2] = 9
+	font[3] = "OUTLINE"
+	bind:SetFont(unpack(font))
+	
+	desc:SetJustifyH("LEFT")
+	quality:SetJustifyH("LEFT")
+	bind:SetJustifyH("LEFT")
+	
+	desc:SetHeight(10)	
+	quality:SetHeight(10)
+	text:SetHeight(10)
+	bind:SetHeight(10)
+	
+	quality:SetWidth(155)
+	
+	quality:SetPoint("TOPLEFT", button, "TOPLEFT", 45, -3)
+	bind:SetPoint("BOTTOMLEFT",  button, "BOTTOMLEFT", 3, 3)
+
 	button:SetHitRectInsets(0, -165, 0, -1)
 	-- End template
 	local border = self:QualityBorder(button)
+	local fborder = self:QualityBorder(frame)
+	button.wrapper = self:ItemButtonWrapper(button, 6, 6)
+	fborder:SetHeight(fborder:GetHeight() -3)
+	fborder:SetPoint("CENTER", frame, "CENTER", 4, .5)
+	fborder:SetAlpha(0.3)
 	frame:SetWidth(200)
 	frame:SetHeight(button:GetHeight()+1)
 	button:ClearAllPoints()
 	frame:ClearAllPoints()
 	if (id == 1) then 
-		frame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, 0) 
+		frame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 10, -10)
 	else
-		frame:SetPoint("TOPLEFT", self.frames[id-1], "BOTTOMLEFT")
+		frame:SetPoint("TOPLEFT", self.frames[id-1], "BOTTOMLEFT", 0, -2)
 	end
 	button:SetPoint("LEFT", frame, "LEFT")
 	button:RegisterForDrag("LeftButton")
-	button:SetScript("OnDragStart", function() self:DragStart() end)
-	button:SetScript("OnDragStop", function() self:DragStop() end)
-	button:SetScript("OnEnter", 	function() local slot = this:GetID(); if ( LootSlotIsItem(slot) ) then	 GameTooltip:SetOwner(this, "ANCHOR_RIGHT"); GameTooltip:SetLootItem(slot); CursorUpdate(); end end )
+	button:SetScript("OnDragStart", function(self) XLoot:DragStart() end)
+	button:SetScript("OnDragStop", function(self) XLoot:DragStop() end)
+	button:SetScript("OnEnter", 	function(self) 
+		local slot = self:GetID() 
+		if LootSlotIsItem(slot) then 
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT") 
+			GameTooltip:SetLootItem(slot) 
+			if IsShiftKeyDown() then 
+				GameTooltip_ShowCompareItem() 
+			end 
+			CursorUpdate(self) 
+		end 
+	end )
+	button:SetScript("OnUpdate", function(self, elapsed) CursorOnUpdate(self) end)
 	self.buttons[id] = button
 	self.buttons[id].border = border
 	self.frames[id] = frame
-	self:msg("Creation: self.buttons["..id.."] = ".. button:GetName())
+	self.frames[id].border = fborder
+	--self:msg("Creation: self.buttons["..id.."] = ".. button:GetName())
 	self.frame:SetHeight(self.frame:GetHeight() + frame:GetHeight())
 
 	--Skin
-	if (IsAddOnLoaded("oSkin") and self.db.profile.oskin) then
-		oSkin:applySkin(button)
-		oSkin:applySkin(frame)
- 	else
- 		self:BackdropFrame(frame, self.db.profile.lootbgcolor, self.db.profile.lootbordercolor)
-		self:oSkinTooltipModded(frame)
- 	end
+	self:Skin(frame)
+	
+	button.text = text
+	button.desc = desc
+	button.bind = bind
+	button.quality = quality
 	button:DisableDrawLayer("ARTWORK")
 	button:Hide()
 	frame:Hide()
@@ -593,7 +693,7 @@ function XLoot:DragStop()
 		XLootFrame:StopMovingOrSizing()
 		self.db.profile.pos.x = XLootFrame:GetLeft()
 		self.db.profile.pos.y = XLootFrame:GetTop()
-		XLoot:msg("Setting position: "..self.db.profile.pos.x.." "..self.db.profile.pos.y) 
+		--XLoot:msg("Setting position: "..self.db.profile.pos.x.." "..self.db.profile.pos.y) 
 	end
 end 
 
@@ -606,13 +706,27 @@ function XLoot:SetupFrames()
 	self.frame:SetWidth(222)
 	self.frame:SetHeight(20)
 	self.frame:SetMovable(1)
+	
+	-- Apply pfUI skin
+    self:BackdropFrame(self.frame, 
+        {0, 0, 0, 0.9},    -- bg color
+        {0.4, 0.4, 0.4, 1} -- border color
+    )
+    
+    -- Add close button (pfUI style)
+    self.closebutton = self:CreateCloseButton(self.frame, function()
+        self:AutoClose(true)
+    end)
+    self.closebutton:Hide()
+	
 	if self.db.profile.dragborder then
 		self.frame:EnableMouse(1)
 	end
 	self.frame:RegisterForDrag("LeftButton")
-	self.frame:SetScript("OnDragStart", function() XLoot:DragStart() end)
-	self.frame:SetScript("OnDragStop", function() XLoot:DragStop() end)
-	self.frame:SetScript("OnHide", function() XLoot:OnHide() end)
+	self.frame:SetScript("OnDragStart", function(self) XLoot:DragStart() end)
+	self.frame:SetScript("OnDragStop", function(self) XLoot:DragStop() end)
+	self.frame:SetScript("OnHide", function(self) XLoot:OnHide() end)
+	--self.frame:IsToplevel(1)
 	self:BackdropFrame(self.frame, self.db.profile.bgcolor, self.db.profile.bordercolor)
    	self.frame:ClearAllPoints()
    	if not self.db.profile.cursor then
@@ -620,54 +734,91 @@ function XLoot:SetupFrames()
 	end
 
 	--Skin
-	if (IsAddOnLoaded("oSkin") and self.db.profile.oskin) then
-		oSkin:applySkin(XLootFrame, {1})
-	else
-		self:oSkinTooltipModded(XLootFrame)
-	end
+	self:Skin(XLootFrame)
    
-    self.frame:SetScale(self.db.profile.scale)
+   self.frame:SetScale(self.db.profile.scale)
+   self.frame:SetAlpha(self.db.profile.alpha)
     
-   	-- Close button,  for help see /pfUI/modules/bags.lua , line 400+
+		-- Close button (pfUI style with border)
 	self.closebutton = CreateFrame("Button", "XLootCloseButton", XLootFrame)
-	self.closebutton:SetScript("OnClick", function() XLoot:AutoClose(true); end)
+	self.closebutton:SetScript("OnClick", function(self, button) XLoot:AutoClose(true, true); end)
 	self.closebutton:SetFrameLevel(8)
+	self.closebutton:SetWidth(16)
+	self.closebutton:SetHeight(16)
+
+	-- Add backdrop with border
+	self.closebutton:SetBackdrop({
+		bgFile = "Interface\\AddOns\\XLoot\\media\\bg",
+		edgeFile = "Interface\\AddOns\\XLoot\\media\\border",
+		tile = true,
+		tileSize = 8,
+		edgeSize = 8,
+		insets = {left = 0, right = 0, top = 0, bottom = 0}
+	})
+	self.closebutton:SetBackdropColor(0.15, 0.1, 0.1, 0.9)
+	self.closebutton:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+
+	-- Close icon texture
+	self.closebutton.icon = self.closebutton:CreateTexture(nil, "OVERLAY")
+	self.closebutton.icon:SetTexture("Interface\\AddOns\\XLoot\\media\\close")
+	self.closebutton.icon:SetWidth(10)
+	self.closebutton.icon:SetHeight(10)
+	self.closebutton.icon:SetPoint("CENTER", self.closebutton, "CENTER", 0, 0)
+	self.closebutton.icon:SetVertexColor(1, 0.3, 0.3, 1)
+
+	-- Highlight effect
+	self.closebutton:SetScript("OnEnter", function(self)
+		self:SetBackdropColor(0.3, 0.1, 0.1, 1)
+		self.icon:SetVertexColor(1, 0.6, 0.6, 1)
+	end)
+
+	self.closebutton:SetScript("OnLeave", function(self)
+		self:SetBackdropColor(0.15, 0.1, 0.1, 0.9)
+		self.icon:SetVertexColor(1, 0.3, 0.3, 1)
+	end)
+
 	self.closebutton:ClearAllPoints()
-	self.closebutton:SetPoint("TOPRIGHT", XLootFrame, "TOPRIGHT") 
-	self.closebutton:SetBackdrop({bgFile = "Interface\\AddOns\\XLoot-pfUI\\media\\bg", tile = true, tileSize = 8,
-								edgeFile = "Interface\\AddOns\\XLoot-pfUI\\media\\border", edgeSize = 8,
-								 insets = {left = 0, right = 0, top = 0, bottom = 0 }})
-	self.closebutton:SetWidth(12) 
-	self.closebutton:SetHeight(12) 
-	self.closebutton:SetHitRectInsets(0, 0, 0, 0) 
-	self.closebutton:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
-	self.closebutton.texture = self.closebutton:CreateTexture("pfBagClose") 
-    self.closebutton.texture:SetTexture("Interface\\AddOns\\XLoot-pfUI\\media\\close") 
-	self.closebutton.texture:SetWidth(8) 
-	self.closebutton.texture:SetHeight(8) 
-	self.closebutton.texture:ClearAllPoints()
-	self.closebutton.texture:SetPoint("TOPRIGHT", XLootFrame, "TOPRIGHT", -2, -2) 
-	self.closebutton:SetHitRectInsets(0, 0, 0, 0) 
-	self.closebutton.texture:SetVertexColor(1,.25,.25,1) 
-	self.closebutton:Hide()
+	self.closebutton:SetPoint("TOPRIGHT", XLootFrame, "TOPRIGHT", -3, -3)
+	self.closebutton:SetHitRectInsets(0, 0, 0, 0)
+	self.closebutton:Show()
+	
+   	-- Link all button
+	self.linkbutton = CreateFrame("Button", "XLootLinkButton", XLootFrame)
+	self.linkbutton:SetScript("OnClick", function(self, button) XLoot:ClickLinkLoot() end)
+	self.linkbutton.text = self.linkbutton:CreateFontString("XLootLinkButtonText", "DIALOG", "GameFontNormalSmall")
+	self.linkbutton.text:SetText("|c22AAAAAA"..L["linkallloot"])
+	self.linkbutton.text:SetAllPoints(self.linkbutton)
+	self.linkbutton:SetFrameLevel(8)
+	self.linkbutton:SetWidth(75)
+	self.linkbutton:SetHeight(24)
+	self.linkbutton:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
+	self.linkbutton:ClearAllPoints()
+	self.linkbutton:SetPoint("BOTTOMRIGHT", XLootFrame, "BOTTOMRIGHT", -4, -3)
+	self.linkbutton:SetHitRectInsets(5, 5, 5, 5)
+	self.linkbutton.text:Show()
+	self.linkbutton:Show()
+	self.dewdrop:Register(XLootLinkButton,
+		'children', function(level, value)
+				self:BuildChannelMenu(level, value, function(arg1,arg2) self:LinkLoot(arg1,arg2) end)
+			end,
+		'cursorX', true,
+		'cursorY', true
+	)
+
 	self:AddLootFrame(1)
 	self.frame:Hide()
 end	
 
 function XLoot:msg( text )
-	if self.db.profile.debug then 
-		DEFAULT_CHAT_FRAME:AddMessage("|cff7fff7fXLoot|r: "..text);
+	if self.db.profile.debug then
+		self:Print(text)
+		--DEFAULT_CHAT_FRAME:AddMessage("|cff7fff7fXLoot|r: "..text);
 	end
 end
 
 function XLoot:Clear()
 	for slot, button in pairs(self.buttons) do
-		--SetItemButtonTexture(button, "")
 		SetItemButtonCount(button, 0)
-		--getglobal("XLootButton"..slot.."Text"):SetVertexColor(0, 0, 0)
-		--getglobal("XLootButton"..slot.."Text"):SetText("")
-		--getglobal("XLootButton"..slot.."Description"):SetText("")
-		--getglobal("XLootButton"..slot.."Quality"):SetText("")
 		button:Hide()
 		self.frames[slot]:Hide()
 	end
@@ -678,45 +829,218 @@ function XLoot:Clear()
 end
 
 function XLoot:LinkToName(link)
+	if not link then return nil end
 	return string.gsub(link,"^.-%[(.*)%].*", "%1")
 end
 
-function XLoot:LinkToID(link)
-	return string.gsub(link,".-\124H([^\124]*)\124h.*", "%1")
+function XLoot:ClickLinkLoot()
+	local channels = self.db.profile.linkallchannels
+	local linked
+	if channels then
+		for k, v in pairs(channels) do 
+			if v then
+				linked = self:LinkLoot(k, v.extchannel)
+			end
+		end
+	end
+	if not linked then
+		self.dewdrop:Open(XLootLinkButton,
+			'children', function(level, value)
+					self:BuildChannelMenu(level, value, function(arg1,arg2) self:LinkLoot(arg1,arg2) end)
+				end,
+			'cursorX', true,
+			'cursorY', true
+		)
+	end
 end
 
-function XLoot:QualityBorder(button)
-	local border = button:CreateTexture(button:GetName() .. "QualBorder", "OVERLAY")
-	--border:SetTexture("Interface\\Buttons\\UI-ActionButton-Border") 
-	border:SetBlendMode("ADD")
-	border:SetAlpha(0.9)
-	border:SetHeight(button:GetHeight()*1.8)
-	border:SetWidth(button:GetWidth()*1.8)
-	border:SetPoint("CENTER", button, "CENTER", 0, 1)
-	border:Hide()
-	return border
+function XLoot:LinkLoot(channel, isExtraChannel)
+	local output, key, buffer = { }, 1
+	
+	if UnitExists("target") then
+		output[1] = UnitName("target")..":"
+	end
+	
+	local linkthreshold, thresholdreached = self.db.profile.linkallthreshold, false
+	for k, v in pairs(self.currentloot) do
+		if v.quality >= linkthreshold then
+			thresholdreached = true
+			buffer = (output[key] and output[key].." " or "")..(v.quantity > 1 and v.quantity.."x" or "")..(v.quantity == 0 and v.item or v.link)
+			if strlen(buffer) > 255 then 
+				key = key + 1
+				output[key] = (v.quantity > 1 and v.quantity.."x" or "")..v.link
+			else
+				output[key] = buffer
+			end
+		end
+	end
+	
+	if not thresholdreached then
+		return false
+	end
+	
+	local chattype, channelout
+	if isExtraChannel then 
+		chattype = "CHANNEL"
+		channelout = GetChannelName(channel)
+	else
+		chattype = channel
+		channelout = nil
+	end
+	
+	for k, v in pairs(output) do
+		v  = string.gsub(v, "\n", " ", 1, true) -- DIE NEWLINES, DIE A HORRIBLE DEATH 
+		SendChatMessage(v, chattype, nil, channelout)
+	end
+	
+	return true
 end
 
-function XLoot:BackdropFrame(frame, bgcolor, bordercolor)
-	frame:SetBackdrop({bgFile = "Interface\\AddOns\\XLoot-pfUI\\media\\bg", 
-                                            edgeFile = "Interface\\AddOns\\XLoot-pfUI\\media\\border_col", 
-                                            tile = true, tileSize = 8, edgeSize = 8, 
-                                            insets = { left = 0, right = 0, top = 0, bottom = 0 }})
- 	frame:SetBackdropColor(unpack(bgcolor))
-   frame:SetBackdropBorderColor(unpack(bordercolor))
+function XLoot:BuildChannelMenu(level, value, func)
+	if level == 1 then
+		self.dewdrop:AddLine(
+			'text', "|cFF77BBFF"..CHANNELS,
+			'isTitle', true)
+			
+		for k, v in pairs(ChannelMenuChatTypeGroups) do
+			if v ~= "WHISPER" then
+				self.dewdrop:AddLine(
+					'text', _G["CHAT_MSG_"..v] or v,
+					'arg1', v,
+					'closeWhenClicked', true,
+					'func', func)
+				end
+		end
+		
+		if CanViewOfficerNote() then 
+			self.dewdrop:AddLine(
+				'text', CHAT_MSG_OFFICER,
+				'arg1', 'OFFICER',
+				'closeWhenClicked', true,
+				'func', func)
+		end
+		
+		if GetNumRaidMembers() > 0 then
+			self.dewdrop:AddLine(
+				'text', CHAT_MSG_RAID,
+				'arg1', 'RAID',
+				'closeWhenClicked', true,
+				'func', func)
+			if IsRaidLeader() or IsRaidOfficer() then
+				self.dewdrop:AddLine(
+					'text', CHAT_MSG_RAID_WARNING,
+					'arg1', 'RAID_WARNING',
+					'closeWhenClicked', true,
+					'func', func)
+			end
+		end
+		
+		self.dewdrop:AddLine()
+		
+		local channellist = {GetChannelList()}
+		local number = nil
+		for k, v in pairs(channellist) do
+			if type(v) == "string" then
+				local cnum, cname = GetChannelName(number)
+				self.dewdrop:AddLine(
+					'text', (cnum > 0 and cnum or number).." - "..cname,
+					'arg1', cname,
+					'arg2', true,
+					'closeWhenClicked', true,
+					'func', func)
+			else
+				number = v
+			end
+		end
+		
+		self.dewdrop:AddLine()
+		self.dewdrop:FeedAceOptionsTable( {type = "group", args = { linkallthreshold = self.opts.args.behavior.args.linkallthreshold, linkallvis = self.opts.args.behavior.args.linkallvis, linkallchannels = self.opts.args.behavior.args.linkallchannels } } )
+		self.dewdrop:AddLine(
+			'text', "|cFFFF3311"..CLOSE,
+			'icon', "Interface\\Glues\\Login\\Glues-CheckBox-Check",
+			'closeWhenClicked', true)
+	elseif level == 2 then
+		if self.opts.args.behavior.args[value] then 
+			self.dewdrop:FeedAceOptionsTable(self.opts.args.behavior.args[value], 1)
+		end
+	end
 end
 
--- Substitute oSkin function, full credit to oSkin devs :)
-function XLoot:oSkinTooltipModded(frame)
-	if not frame.tfade then frame.tfade = frame:CreateTexture(nil, "BORDER") end
-	frame.tfade:SetTexture("Interface\\ChatFrame\\ChatFrameBackground")
+function XLoot:ClassHex(class, enclass)
+	class = enclass or class
+	if not self.classhexes[class] then
+		local c = RAID_CLASS_COLORS[class]
+		self.classhexes[class] = string.format("%2x%2x%2x", c.r*255, c.g*255, c.b*255)
+	end
+	return self.classhexes[class]
+end
 
-	frame.tfade:SetPoint("TOPLEFT", frame, "TOPLEFT",1,-1)
-	frame.tfade:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",-1,1)
+function XLoot:ParseCoinString(tstr)
+	local tc
+	local total = 0
+	for k, v in pairs(self.coinage) do
+		_, _, tc = string.find(tstr, "(%d+) "..v[1])
+		if tc then
+			total = total + (tc * v[2])
+		end
+	end
+	return total
+end
 
-	frame.tfade:SetBlendMode("ADD")
-	frame.tfade:SetGradientAlpha("VERTICAL", .1, .1, .1, 0, .2, .2, .2, 0.3)
 
-	frame.tfade:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
-	frame.tfade:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -6, -30)
+local coinage = { { GOLD_AMOUNT, 0, "ffd700" }, { SILVER_AMOUNT, 0, "c7c7cf" }, { COPPER_AMOUNT, 0, "eda55f" } }
+local moneystr_tmp = {}
+function XLoot:ParseMoney(total, short, nocolor)
+	local coinage = coinage
+	-- gold
+	coinage[1][2] = floor(total / 10000)
+	-- silver
+	coinage[2][2] = mod(floor(total / 100), 100)
+	-- copper
+	coinage[3][2] = mod(total, 100)
+
+	for i, v in ipairs(coinage) do
+		-- do we have a usable value in this denomination?
+		if v[2] and v[2] > 0 then
+			if short then
+				table.insert(moneystr_tmp,
+					     ("|cFF%s%d"):format(v[3], v[2]))
+			else
+				if nocolor then
+					table.insert(moneystr_tmp,
+							v[1]:format(v[2]))
+				else
+					table.insert(moneystr_tmp,
+							(("|cFF%s%s"):format(v[3], v[1])):format(v[2]))
+				end
+			end
+		end
+	end
+
+	-- join the usable values with ", "
+	local str = table.concat(moneystr_tmp, ", ")
+
+	-- cleanup
+	for i, v in ipairs(moneystr_tmp) do
+		moneystr_tmp[i] = nil
+	end
+
+	return str, gold, silver, copper
+end
+
+local bop, boe, bou
+function XLoot:SetBindText(bind, text)
+	if not bop then
+		bop, boe, bou = L["BoP"].." ", L["BoE"].." ", L["BoU"].." "
+	end
+	if bind == "pickup" then
+		text:SetText(bop)
+		text:SetVertexColor(1, .3, .1)
+	elseif bind == "equip" then
+		text:SetText(boe)
+		text:SetVertexColor(.3, 1, .3)
+	elseif bind == "BOU" then
+		text:SetText(bou)
+		text:SetVertexColor(.3, .5, 1)
+	else text:SetText("")	end
 end

@@ -1,30 +1,42 @@
-## Interface: 20400
-## Title: XLoot-pfUI |cff7fff7f -Ace2-|r
-## Notes: A remake of the built-in lootframe.|cff33ffccShagu|cffffffffStyle |cffff4488By Xuerian|r.
-## Version: 0.6
-## Author: Xuerian, (Shagu mod by Ko0z) modified by Macumba
+﻿## Interface: 30300
+## Title: XLoot |cff7fff7f -Ace2-|r
+## Notes: A remake of the built-in lootframe. |cffff4488By Xuerian|r.
+## Notes-ruRU: Переделывает встроенные окна добычи. |cffff4488Xuerian|r.
+## Notes-esES: Un reemplazo de la ventana de botín. |cffff4488Por Xuerian|r.
+## Notes-zhTW: 拾取物品增強 |cffff4488By Xuerian|r.
+## Notes-deDE: Ein Remake des eingebauten Lootfensters. |cffff4488By Xuerian|r.
+## Notes-zhCN: 拾取物品增强 |cffff4488By Xuerian|r。
+## Version: 0.91.1
+## Author: Xuerian
 ## X-Category: Inventory
 ## X-AceForum: 2278
 ## X-eMail: sky.shell@gmail.com
 ## X-Website: http://wowace.com/index.php/XLoot
-## OptionalDeps: Ace2, DewdropLib, oSkin
-## X-Embeds: Ace2, DewdropLib
-## SavedVariables: XLootpfUIDB
+## X-Credits: In memory of Arm of Aman Thul and thanks to the authors of all the embeds XLoot uses, #wowace on Freenode.net for being my support group and helping fix bugs, fenlis for koKR translation, Cinedelle for frFR translation
+## X-Curse-Packaged-Version: r367
+## X-Curse-Project-Name: XLoot
+## X-Curse-Project-ID: xloot
+## X-Curse-Repository-ID: wow/xloot/mainline
 
-libs\AceLibrary\AceLibrary.lua
-libs\AceOO\AceOO-2.0.lua
-libs\AceEvent\AceEvent-2.0.lua
-libs\AceAddon\AceAddon-2.0.lua
-libs\AceHook\AceHook-2.0.lua
-libs\AceLocale\AceLocale-2.0.lua
-libs\AceDB\AceDB-2.0.lua
-libs\AceConsole\AceConsole-2.0.lua
-libs\AceModuleCore\AceModuleCore-2.0.lua
+## OptionalDeps: Ace2, DewdropLib, Deformat, AnchorsAway, SpecialEventsEmbed, SpecialEvents-Loot-1.0
+## X-Embeds: Ace2, DewdropLib, Deformat, AnchorsAway, SpecialEventsEmbed
+## SavedVariables: XLootDB
 
-libs\Dewdrop\Dewdrop-2.0.lua
-
-localization.enUS.lua
-localization.koKR.lua
+embeds.xml
 
 XLoot.lua
+XLootSkin.lua
 XLootOptions.lua
+
+XLootUtilities.lua
+XLootRowTools.lua
+XLootTooltip.lua
+
+locales\enUS.lua
+locales\ruRU.lua
+locales\koKR.lua
+locales\zhTW.lua
+locales\zhCN.lua
+locales\deDE.lua
+locales\frFR.lua
+locales\esES.lua

@@ -1,6 +1,22 @@
-local L = AceLibrary("AceLocale-2.0"):new("XLoot-pfUI")
+local L = AceLibrary("AceLocale-2.2"):new("XLoot")
+
+local _G = getfenv(0)
+
+function XLoot:optGetKey(table, value)
+	for k, v in pairs(table) do
+		if value == v then 
+			return k
+		end
+	end
+end
 
 function XLoot:DoOptions()
+	self.opts_qualitykeys = {}
+	self.opts_partyconditions = { always = ALWAYS, party = PARTY, raid = RAID, never = CAMERA_NEVER }
+	for i = 0, 6 do
+		self.opts_qualitykeys[i+1] = ITEM_QUALITY_COLORS[i].hex.._G["ITEM_QUALITY"..tostring(i).."_DESC"].."|r"
+	end
+		
 	local db = self.db.profile
 	local hcolor = "|cFF77BBFF"
 	XLoot.opts = {
@@ -9,8 +25,11 @@ function XLoot:DoOptions()
 			header = {
 				type = "header",
 				name = hcolor..L["guiTitle"].."  |c88888888"..self.revision,
+				icon = "Interface\\Buttons\\UI-GroupLoot-Dice-Up",
+				iconHeight = 32,
+				iconWidth = 32,
 				order = 1
-			},
+			}, 
 			lock = {
 				type = "toggle",
 				name = L["optLock"],
@@ -31,7 +50,7 @@ function XLoot:DoOptions()
 				type = "execute",
 				name = L["optOptions"],
 				desc = L["descOptions"],
-				func = function() self.dewdrop:Open(UIParent) end,
+				func = function() self:OpenMenu(UIParent) end,
 				order = 100,
 				guiHidden = true
 			},
@@ -164,7 +183,7 @@ function XLoot:DoOptions()
 							end,
 						set = function(v)
 							db.swiftloot = v
-							self:SwiftMouseEvents(v)
+							self:SwiftMouseDeuce(v)
 							end,
 						order = 19
 					},
@@ -200,8 +219,60 @@ function XLoot:DoOptions()
 							db.infotext = v
 							end,
 						order = 25
-					}
-				}
+					},
+					bindtext = {
+						type = "toggle",
+						name = L["Show BoP/BoE/BoU"],
+						desc = L["Show Bind on Pickup/Bind on Equip/Bind on Use text opposite stack size for items"],
+						get = function()
+							return db.bindtext
+							end,
+						set = function(v)
+							db.bindtext = v
+							end,
+						order = 26
+					},
+					bspacer4 = {
+						type = "header",
+						order = 27
+					},
+					bheader5 = {
+						type = "header",
+						name = hcolor..L["optLinkAll"],
+						order = 29
+					},
+					linkallvis = {
+						type = "text",
+						name = L["optLinkAllVis"]..self.opts_partyconditions[db.linkallvis],
+						desc = L["descLinkAllVis"],
+						get = function() return self.opts_partyconditions[db.linkallvis] end,
+						set = function(v) db.linkallvis = v; self.opts.args.behavior.args.linkallvis.name = L["optLinkAllVis"]..self.opts_partyconditions[v]; end,
+						validate = self.opts_partyconditions,
+						order = 31
+					},
+					linkallthreshold = {
+						type = "text",
+						name = L["optLinkAllThreshold"],
+						desc = L["descLinkAllThreshold"],
+						get = function() return self.opts_qualitykeys[db.linkallthreshold+1] end,
+						set = function(v) db.linkallthreshold = self:optGetKey(self.opts_qualitykeys, v) - 1 end,
+						validate = self.opts_qualitykeys,
+						order = 33
+					},
+					linkallchannels = {
+						type = "group",
+						name = L.optLinkAllChannels,
+						desc = L.descLinkAllChannels,
+						args = {
+							header = {
+								type = "header",
+								name = "|cFF77BBFF"..CHANNELS,
+								order = 1
+							},
+						},
+						order = 35
+					},
+				},
 			},
 			appearance = {
 				type = "group",
@@ -213,18 +284,6 @@ function XLoot:DoOptions()
 						type = "header",
 						name = hcolor..L["catGeneralAppearance"],
 						order = 1
-					},
-					oskin = {
-						type = "toggle",
-						name = L["optOskin"],
-						desc = L["descOskin"],
-						get = function()
-							return db.oskin
-							end,
-						set = function(v)
-							db.oskin = v
-							end,
-						order = 3
 					},
 					scale = {
 						type = "range",
@@ -242,14 +301,25 @@ function XLoot:DoOptions()
 						step = 0.05,
 						order = 5
 					},
+					alpha = {
+						type = "range",
+						name = L["Alpha"],
+						desc = L["Alpha"],
+						get = function() return db.alpha end,
+						set = function(v) db.alpha = v self.frame:SetAlpha(v) end,
+						min = 0.05,
+						max = 1,
+						step = 0.05,
+						order = 6
+					},
 					aspacer = {
 						type = "header",
-						order = 6
+						order = 7
 					},
 					aheader1 = {
 						type = "header",
 						name = hcolor..L["catFrameAppearance"],
-						order = 7
+						order = 8
 					},
 					qualityborder = {
 						type = "toggle",
@@ -336,6 +406,27 @@ function XLoot:DoOptions()
 							end,
 						order = 19
 					},
+					loothighlightframe = {
+						type = "toggle",
+						name = L["optHighlightLoot"],
+						desc = L["descHighlightLoot"],
+							get = function()
+							return db.loothighlightframe
+							end,
+						set = function(v)
+							db.loothighlightframe = v
+							end,
+						order = 20
+					},
+					loothighlightthreshold = {
+						type = "text",
+						name = L["optHighlightThreshold"],
+						desc = L["descHighlightThreshold"],
+						get = function() return self.opts_qualitykeys[db.loothighlightthreshold+1] end,
+						set = function(v) db.loothighlightthreshold = self:optGetKey(self.opts_qualitykeys, v) - 1 end,
+						validate = self.opts_qualitykeys,
+						order = 21
+					},
 					lootbgcolor = {
 						type = "color",
 						name = L["optLootbgcolor"],
@@ -351,7 +442,7 @@ function XLoot:DoOptions()
 							end
 						end,
 						hasAlpha = true,
-						order = 21
+						order = 22
 					},
 					lootbordercolor = {
 						type = "color",
@@ -368,14 +459,30 @@ function XLoot:DoOptions()
 							end
 						end, 
 						hasAlpha = true,
-						order = 23
+						order = 24
+					},
+					infocolorspacer = {
+						type = "header",
+						order = 25,
+					},
+					infocolor = {
+						type = "color",
+						name = L["optInfoColor"],
+						desc = L["descInfoColor"],
+						get = function()
+							return unpack(db.infocolor)
+						end,
+						set = function(r, g, b)
+							db.infocolor = { r, g, b }
+						end, 
+						order = 36,
 					},
 				},
 			},
 			advanced = {
 				type = "group",
-				name = L["optAdvanced"],
-				desc = L["descAdvanced"],
+				name = "|c77AAAAAA"..L["optAdvanced"],
+				desc = "|c77AAAAAA"..L["descAdvanced"],
 				order = 80,
 				args = {
 					debug = {
@@ -392,18 +499,60 @@ function XLoot:DoOptions()
 					},
 					adspacer = {
 						type = "header",
-						order = 2
+						order = 7
 					},
 					defaults = {
 						type = "execute",
 						name = "|cFFFF5522"..L["optDefaults"],
 						desc = L["descDefaults"],
 						func = function() self:Defaults() end, 
-						order = 3
+						order = 10
 					}
 				}
 			},
 		}
 	}
-	self:RegisterChatCommand({ "/XLoot" }, self.opts)
+
+	-- What a long freaking menu for channnneeellllllsssssss hateee hate HATE rrrrrrawr.
+	self.linkallchannelorder = 2
+	self.opt_addchannel = function(name, ref, extchannel)
+		if not name then
+			self.opts.args.behavior.args.linkallchannels.args["spacer"..self.linkallchannelorder] = {
+				type = "header",
+				order = self.linkallchannelorder
+			}
+		else
+			if not db.linkallchannels[ref] then db.linkallchannels[ref] = false end
+			self.opts.args.behavior.args.linkallchannels.args[ref] = {
+				type = "toggle",
+				name = name,
+				desc = string.format(L["linkallchanneldesc"], name),
+				get = function() return (db.linkallchannels and db.linkallchannels[ref] ~= false) end,
+				set = function(v) db.linkallchannels[ref] = v and { extchannel = extchannel } or false end,
+				order = self.linkallchannelorder
+			}
+		end
+		self.linkallchannelorder = self.linkallchannelorder +1
+	end
+	for k, v in pairs(ChannelMenuChatTypeGroups) do
+		if v ~= "WHISPER" then
+			self.opt_addchannel(_G["CHAT_MSG_"..v], v)
+		end
+	end
+	self.opt_addchannel(CHAT_MSG_OFFICER, "OFFICER")
+	self.opt_addchannel(CHAT_MSG_RAID, "RAID")
+	self.opt_addchannel(CHAT_MSG_RAID_WARNING, "RAID_WARNING")
+	self.opt_addchannel()
+	local channellist = {GetChannelList()}
+	local number = nil
+	for k, v in pairs(channellist) do
+		if type(v) == "string" then
+			local cnum, cname = GetChannelName(number)
+			self.opt_addchannel((cnum > 0 and cnum or number).." - "..v, v, true)
+		else
+			number = v
+		end
+	end
+
+	self:RegisterChatCommand({ "/xloot" }, self.opts)
 end
