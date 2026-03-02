@@ -12,7 +12,7 @@ Credits: <a href="https://github.com/Ko0z/Xloot">Ko0z</a>, <a href="https://gith
 
 # Install 
 
-Rename the folder "XLoot-pfUI"
+Rename the folder "XLoot"
 
 # Source
 https://github.com/mrrosh/XLoot-pfUI
