@@ -503,15 +503,15 @@ function XLoot:Update()
 		self.frame:SetBackdropColor(unpack(db.bgcolor))
 	end
 		
-	XLootFrame:SetHeight(20 + (curshift*(XLootButtonFrame1:GetHeight()+2)))
+	XLootFrame:SetHeight((curshift*(XLootButtonFrame1:GetHeight())))
 	
 	if db.lootexpand then
 		self.loothasbeenexpanded = true
 		local fwidth, bwidth = (self.buttons[1]:GetWidth() + framewidth + 21), -(framewidth + 16)
-		self:UpdateWidths(curshift, fwidth, bwidth, fwidth+24)
+		self:UpdateWidths(curshift, fwidth, bwidth, fwidth+3)
 	else --if self.loothasbeenexpanded then
 		self.loothasbeenexpanded = false
-		self:UpdateWidths(table.getn(self.frames), 200, -163, 222)
+		self:UpdateWidths(table.getn(self.frames), 200, -163, 200)
 	end
 	
 	
@@ -636,15 +636,15 @@ function XLoot:AddLootFrame(id)
 	button.wrapper = self:ItemButtonWrapper(button, 6, 6)
 	fborder:SetHeight(fborder:GetHeight() -3)
 	fborder:SetPoint("CENTER", frame, "CENTER", 4, .5)
-	fborder:SetAlpha(0.3)
+	fborder:SetAlpha(1)
 	frame:SetWidth(200)
-	frame:SetHeight(button:GetHeight()+1)
+	frame:SetHeight(button:GetHeight()+6)
 	button:ClearAllPoints()
 	frame:ClearAllPoints()
 	if (id == 1) then 
-		frame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 10, -10)
+		frame:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 3, 0)
 	else
-		frame:SetPoint("TOPLEFT", self.frames[id-1], "BOTTOMLEFT", 0, -2)
+		frame:SetPoint("TOPLEFT", self.frames[id-1], "BOTTOMLEFT", 0, 0)
 	end
 	button:SetPoint("LEFT", frame, "LEFT")
 	button:RegisterForDrag("LeftButton")
@@ -710,7 +710,7 @@ function XLoot:SetupFrames()
 	-- Apply pfUI skin
     self:BackdropFrame(self.frame, 
         {0, 0, 0, 0.9},    -- bg color
-        {0.4, 0.4, 0.4, 1} -- border color
+        {0.6, 0.6, 0.6, 1} -- border color
     )
     
     -- Add close button (pfUI style)
@@ -743,8 +743,8 @@ function XLoot:SetupFrames()
 	self.closebutton = CreateFrame("Button", "XLootCloseButton", XLootFrame)
 	self.closebutton:SetScript("OnClick", function(self, button) XLoot:AutoClose(true, true); end)
 	self.closebutton:SetFrameLevel(8)
-	self.closebutton:SetWidth(16)
-	self.closebutton:SetHeight(16)
+	self.closebutton:SetWidth(13)
+	self.closebutton:SetHeight(13)
 
 	-- Add backdrop with border
 	self.closebutton:SetBackdrop({
@@ -756,13 +756,13 @@ function XLoot:SetupFrames()
 		insets = {left = 0, right = 0, top = 0, bottom = 0}
 	})
 	self.closebutton:SetBackdropColor(0.15, 0.1, 0.1, 0.9)
-	self.closebutton:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+	self.closebutton:SetBackdropBorderColor(0.9, 0.9, 0.9, 1)
 
 	-- Close icon texture
 	self.closebutton.icon = self.closebutton:CreateTexture(nil, "OVERLAY")
 	self.closebutton.icon:SetTexture("Interface\\AddOns\\XLoot\\media\\close")
-	self.closebutton.icon:SetWidth(10)
-	self.closebutton.icon:SetHeight(10)
+	self.closebutton.icon:SetWidth(7)
+	self.closebutton.icon:SetHeight(7)
 	self.closebutton.icon:SetPoint("CENTER", self.closebutton, "CENTER", 0, 0)
 	self.closebutton.icon:SetVertexColor(1, 0.3, 0.3, 1)
 
@@ -778,7 +778,7 @@ function XLoot:SetupFrames()
 	end)
 
 	self.closebutton:ClearAllPoints()
-	self.closebutton:SetPoint("TOPRIGHT", XLootFrame, "TOPRIGHT", -3, -3)
+	self.closebutton:SetPoint("TOPRIGHT", XLootFrame, "TOPRIGHT", 0, 0)
 	self.closebutton:SetHitRectInsets(0, 0, 0, 0)
 	self.closebutton:Show()
 	
@@ -793,7 +793,7 @@ function XLoot:SetupFrames()
 	self.linkbutton:SetHeight(24)
 	self.linkbutton:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
 	self.linkbutton:ClearAllPoints()
-	self.linkbutton:SetPoint("BOTTOMRIGHT", XLootFrame, "BOTTOMRIGHT", -4, -3)
+	self.linkbutton:SetPoint("BOTTOM", XLootFrame, "BOTTOM", 10, -10)
 	self.linkbutton:SetHitRectInsets(5, 5, 5, 5)
 	self.linkbutton.text:Show()
 	self.linkbutton:Show()
