@@ -7,7 +7,7 @@ Tested on Ascension BronzeBeard
 
 Credits: <a href="https://github.com/Ko0z/Xloot">Ko0z</a>, <a href="https://github.com/shagu/pfUI">shagu</a>.
 
-<img width="448" height="309" alt="image" src="https://github.com/user-attachments/assets/f32cf35f-9849-449f-896f-dfd4d9fdf04f" />
+<img width="298" height="244" alt="image" src="https://github.com/user-attachments/assets/050d9163-0339-4838-9e7e-9c477af9fccb" />
 
 
 # Install 
