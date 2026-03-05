@@ -12,7 +12,7 @@ local pfUI_colors = {
 -- pfUI backdrop template
 local pfUI_backdrop = {
     bgFile = "Interface\\AddOns\\XLoot\\media\\bg",
-    edgeFile = "Interface\\AddOns\\XLoot\\media\\border",
+    edgeFile = "Interface\\AddOns\\XLoot\\media\\border_col",
     tile = true, 
     tileSize = 12, 
     edgeSize = 12,
