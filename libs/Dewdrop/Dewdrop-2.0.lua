@@ -618,6 +618,7 @@ local function AcquireButton(self, level)
 				end
 				return
 			end
+			if not level then return end
 			self:Close(this.level.num + 1)
 			if not this.disabled then
 				if this.secure then
